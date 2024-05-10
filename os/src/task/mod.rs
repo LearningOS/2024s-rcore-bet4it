@@ -101,6 +101,18 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 
+bitflags! {
+    /// Mmap protection property: `R W X`
+    pub struct MmapProtection: u8 {
+        ///Readable
+        const R = 1 << 0;
+        ///Writable
+        const W = 1 << 1;
+        ///Excutable
+        const X = 1 << 2;
+    }
+}
+
 lazy_static! {
     /// Creation of initial process
     ///

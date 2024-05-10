@@ -18,6 +18,25 @@ pub use memory_set::remap_test;
 pub use memory_set::{MapPermission, MemorySet, KERNEL_SPACE};
 pub use page_table::{translated_byte_buffer, translated_refmut, translated_str, PageTableEntry};
 use page_table::{PTEFlags, PageTable};
+
+/// Represents different errors that can occur during memory mapping operations.
+pub enum MapError {
+    /// An error occurred when trying to find or create a page table entry.
+    FindPteCreateError,
+    /// Failed to allocate a physical frame for mapping.
+    FrameAllocationFailed,
+    /// Invalid permission bits were provided for the page table entry.
+    InvalidPermissionBits(usize),
+    /// Attempted to map a virtual page number that is already mapped.
+    VpnAlreadyMapped(VirtPageNum),
+    /// Failed to remove a mapped area.
+    RemoveAreaFailed,
+    /// Attempted to insert a mapped area that conflicts with an existing area.
+    AreaConflict,
+    /// The provided virtual address is not properly aligned.
+    UnalignedVirtualAddress,
+}
+
 /// initiate heap allocator, frame allocator and kernel space
 pub fn init() {
     heap_allocator::init_heap();
