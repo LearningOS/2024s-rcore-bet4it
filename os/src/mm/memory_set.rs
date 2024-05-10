@@ -1,5 +1,5 @@
 //! Implementation of [`MapArea`] and [`MemorySet`].
-use super::{frame_alloc, FrameTracker};
+use super::{frame_alloc, FrameTracker, MapError};
 use super::{PTEFlags, PageTable, PageTableEntry};
 use super::{PhysAddr, PhysPageNum, VirtAddr, VirtPageNum};
 use super::{StepByOne, VPNRange};
@@ -54,17 +54,29 @@ impl MemorySet {
     pub fn token(&self) -> usize {
         self.page_table.token()
     }
-    /// Assume that no conflicts.
+    /// Insert a framed memory mapping area.
     pub fn insert_framed_area(
         &mut self,
         start_va: VirtAddr,
         end_va: VirtAddr,
         permission: MapPermission,
-    ) {
-        self.push(
-            MapArea::new(start_va, end_va, MapType::Framed, permission),
-            None,
-        );
+    ) -> Result<(), MapError> {
+        if !start_va.aligned() {
+            return Err(MapError::UnalignedVirtualAddress);
+        }
+        if let Some(_) = self.areas.iter().position(|area| {
+            (area.vpn_range.get_start() <= start_va.floor()
+                && area.vpn_range.get_end() > start_va.floor())
+                || (area.vpn_range.get_start() < end_va.ceil()
+                    && area.vpn_range.get_end() >= end_va.ceil())
+        }) {
+            Err(MapError::AreaConflict)
+        } else {
+            self.push(
+                MapArea::new(start_va, end_va, MapType::Framed, permission),
+                None,
+            )
+        }
     }
     /// remove a area
     pub fn remove_area_with_start_vpn(&mut self, start_vpn: VirtPageNum) {
@@ -81,16 +93,37 @@ impl MemorySet {
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
     /// space.
-    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
-        map_area.map(&mut self.page_table);
+    fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) -> Result<(), MapError> {
+        map_area.map(&mut self.page_table)?;
         if let Some(data) = data {
             map_area.copy_data(&mut self.page_table, data);
         }
         self.areas.push(map_area);
+        Ok(())
+    }
+    /// Remove a framed memory mapping area.
+    pub fn remove_framed_area(
+        &mut self,
+        start_va: VirtAddr,
+        end_va: VirtAddr,
+    ) -> Result<(), MapError> {
+        if !start_va.aligned() || !end_va.aligned() {
+            return Err(MapError::UnalignedVirtualAddress);
+        }
+        if let Some(index) = self.areas.iter().position(|area| {
+            area.vpn_range.get_start() == start_va.into()
+                && area.vpn_range.get_end() == end_va.into()
+        }) {
+            let mut map_area = self.areas.swap_remove(index);
+            map_area.unmap(&mut self.page_table);
+            Ok(())
+        } else {
+            Err(MapError::RemoveAreaFailed)
+        }
     }
     /// Mention that trampoline is not collected by areas.
     fn map_trampoline(&mut self) {
-        self.page_table.map(
+        let _ = self.page_table.map(
             VirtAddr::from(TRAMPOLINE).into(),
             PhysAddr::from(strampoline as usize).into(),
             PTEFlags::R | PTEFlags::X,
@@ -110,7 +143,7 @@ impl MemorySet {
             sbss_with_stack as usize, ebss as usize
         );
         info!("mapping .text section");
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 (stext as usize).into(),
                 (etext as usize).into(),
@@ -120,7 +153,7 @@ impl MemorySet {
             None,
         );
         info!("mapping .rodata section");
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 (srodata as usize).into(),
                 (erodata as usize).into(),
@@ -130,7 +163,7 @@ impl MemorySet {
             None,
         );
         info!("mapping .data section");
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 (sdata as usize).into(),
                 (edata as usize).into(),
@@ -140,7 +173,7 @@ impl MemorySet {
             None,
         );
         info!("mapping .bss section");
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 (sbss_with_stack as usize).into(),
                 (ebss as usize).into(),
@@ -150,7 +183,7 @@ impl MemorySet {
             None,
         );
         info!("mapping physical memory");
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 (ekernel as usize).into(),
                 MEMORY_END.into(),
@@ -161,7 +194,7 @@ impl MemorySet {
         );
         info!("mapping memory-mapped registers");
         for pair in MMIO {
-            memory_set.push(
+            let _ = memory_set.push(
                 MapArea::new(
                     (*pair).0.into(),
                     ((*pair).0 + (*pair).1).into(),
@@ -204,7 +237,7 @@ impl MemorySet {
                 }
                 let map_area = MapArea::new(start_va, end_va, MapType::Framed, map_perm);
                 max_end_vpn = map_area.vpn_range.get_end();
-                memory_set.push(
+                let _ = memory_set.push(
                     map_area,
                     Some(&elf.input[ph.offset() as usize..(ph.offset() + ph.file_size()) as usize]),
                 );
@@ -216,7 +249,7 @@ impl MemorySet {
         // guard page
         user_stack_bottom += PAGE_SIZE;
         let user_stack_top = user_stack_bottom + USER_STACK_SIZE;
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 user_stack_bottom.into(),
                 user_stack_top.into(),
@@ -226,7 +259,7 @@ impl MemorySet {
             None,
         );
         // used in sbrk
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 user_stack_top.into(),
                 user_stack_top.into(),
@@ -236,7 +269,7 @@ impl MemorySet {
             None,
         );
         // map TrapContext
-        memory_set.push(
+        let _ = memory_set.push(
             MapArea::new(
                 TRAP_CONTEXT_BASE.into(),
                 TRAMPOLINE.into(),
@@ -259,7 +292,7 @@ impl MemorySet {
         // copy data sections/trap_context/user_stack
         for area in user_space.areas.iter() {
             let new_area = MapArea::from_another(area);
-            memory_set.push(new_area, None);
+            let _ = memory_set.push(new_area, None);
             // copy data from another space
             for vpn in area.vpn_range {
                 let src_ppn = user_space.translate(vpn).unwrap().ppn();
@@ -351,20 +384,25 @@ impl MapArea {
             map_perm: another.map_perm,
         }
     }
-    pub fn map_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
+    pub fn map_one(
+        &mut self,
+        page_table: &mut PageTable,
+        vpn: VirtPageNum,
+    ) -> Result<(), MapError> {
         let ppn: PhysPageNum;
         match self.map_type {
             MapType::Identical => {
                 ppn = PhysPageNum(vpn.0);
             }
             MapType::Framed => {
-                let frame = frame_alloc().unwrap();
+                let frame = frame_alloc().ok_or(MapError::FrameAllocationFailed)?;
                 ppn = frame.ppn;
                 self.data_frames.insert(vpn, frame);
             }
         }
-        let pte_flags = PTEFlags::from_bits(self.map_perm.bits).unwrap();
-        page_table.map(vpn, ppn, pte_flags);
+        let pte_flags = PTEFlags::from_bits(self.map_perm.bits)
+            .ok_or(MapError::InvalidPermissionBits(self.map_perm.bits as usize))?;
+        page_table.map(vpn, ppn, pte_flags)
     }
     pub fn unmap_one(&mut self, page_table: &mut PageTable, vpn: VirtPageNum) {
         if self.map_type == MapType::Framed {
@@ -372,10 +410,11 @@ impl MapArea {
         }
         page_table.unmap(vpn);
     }
-    pub fn map(&mut self, page_table: &mut PageTable) {
+    pub fn map(&mut self, page_table: &mut PageTable) -> Result<(), MapError> {
         for vpn in self.vpn_range {
-            self.map_one(page_table, vpn);
+            self.map_one(page_table, vpn)?
         }
+        Ok(())
     }
     pub fn unmap(&mut self, page_table: &mut PageTable) {
         for vpn in self.vpn_range {
@@ -392,7 +431,7 @@ impl MapArea {
     #[allow(unused)]
     pub fn append_to(&mut self, page_table: &mut PageTable, new_end: VirtPageNum) {
         for vpn in VPNRange::new(self.vpn_range.get_end(), new_end) {
-            self.map_one(page_table, vpn)
+            let _ = self.map_one(page_table, vpn);
         }
         self.vpn_range = VPNRange::new(self.vpn_range.get_start(), new_end);
     }

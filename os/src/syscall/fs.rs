@@ -1,13 +1,15 @@
 //! File and filesystem-related syscalls
 use crate::fs::{open_file, OpenFlags, Stat};
 use crate::mm::{translated_byte_buffer, translated_str, UserBuffer};
-use crate::task::{current_task, current_user_token};
+use crate::syscall::{SYSCALL_CLOSE, SYSCALL_OPEN, SYSCALL_READ, SYSCALL_WRITE};
+use crate::task::current_task;
 
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
-    trace!("kernel:pid[{}] sys_write", current_task().unwrap().pid.0);
-    let token = current_user_token();
-    let task = current_task().unwrap();
-    let inner = task.inner_exclusive_access();
+    let current_task = current_task().unwrap();
+    trace!("kernel:pid[{}] sys_write", current_task.pid.0);
+    let mut inner = current_task.inner_exclusive_access();
+    inner.syscall_times[SYSCALL_WRITE] += 1;
+    let token = inner.memory_set.token();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -25,10 +27,11 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 }
 
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
-    trace!("kernel:pid[{}] sys_read", current_task().unwrap().pid.0);
-    let token = current_user_token();
-    let task = current_task().unwrap();
-    let inner = task.inner_exclusive_access();
+    let current_task = current_task().unwrap();
+    trace!("kernel:pid[{}] sys_read", current_task.pid.0);
+    let mut inner = current_task.inner_exclusive_access();
+    inner.syscall_times[SYSCALL_READ] += 1;
+    let token = inner.memory_set.token();
     if fd >= inner.fd_table.len() {
         return -1;
     }
@@ -47,12 +50,13 @@ pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
 }
 
 pub fn sys_open(path: *const u8, flags: u32) -> isize {
-    trace!("kernel:pid[{}] sys_open", current_task().unwrap().pid.0);
-    let task = current_task().unwrap();
-    let token = current_user_token();
+    let current_task = current_task().unwrap();
+    trace!("kernel:pid[{}] sys_open", current_task.pid.0);
+    let mut inner = current_task.inner_exclusive_access();
+    inner.syscall_times[SYSCALL_OPEN] += 1;
+    let token = inner.memory_set.token();
     let path = translated_str(token, path);
     if let Some(inode) = open_file(path.as_str(), OpenFlags::from_bits(flags).unwrap()) {
-        let mut inner = task.inner_exclusive_access();
         let fd = inner.alloc_fd();
         inner.fd_table[fd] = Some(inode);
         fd as isize
@@ -62,9 +66,10 @@ pub fn sys_open(path: *const u8, flags: u32) -> isize {
 }
 
 pub fn sys_close(fd: usize) -> isize {
-    trace!("kernel:pid[{}] sys_close", current_task().unwrap().pid.0);
-    let task = current_task().unwrap();
-    let mut inner = task.inner_exclusive_access();
+    let current_task = current_task().unwrap();
+    trace!("kernel:pid[{}] sys_close", current_task.pid.0);
+    let mut inner = current_task.inner_exclusive_access();
+    inner.syscall_times[SYSCALL_CLOSE] += 1;
     if fd >= inner.fd_table.len() {
         return -1;
     }
