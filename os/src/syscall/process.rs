@@ -6,9 +6,7 @@ use crate::{
     mm::translated_byte_buffer,
     syscall::{SYSCALL_EXIT, SYSCALL_GET_TIME, SYSCALL_TASK_INFO, SYSCALL_YIELD},
     task::{
-        change_program_brk, current_user_token, exit_current_and_run_next, get_run_time,
-        get_syscall_times, get_task_status, record_syscall, suspend_current_and_run_next,
-        TaskStatus,
+        change_program_brk, current_user_token, exit_current_and_run_next, get_run_time, get_syscall_times, get_task_status, map_addr, record_syscall, suspend_current_and_run_next, TaskStatus
     },
     timer::get_time_us,
 };
@@ -97,9 +95,10 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
 }
 
 // YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+pub fn sys_mmap(start: usize, len: usize, port: usize) -> isize {
+    trace!("kernel: sys_mmap");
+    map_addr(start, len, port);
+    0
 }
 
 // YOUR JOB: Implement munmap.

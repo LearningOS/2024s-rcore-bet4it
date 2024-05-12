@@ -16,6 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
+use crate::mm::MapPermission;
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -132,6 +133,17 @@ impl TaskManager {
         time - task.start_time
     }
 
+    fn map_addr(&self, addr: usize, size: usize, perm: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task = &mut inner.tasks[current];
+        task.memory_set.insert_framed_area(
+            addr.into(),
+            (addr + size).into(),
+            MapPermission::from_bits((perm << 1) as u8).unwrap(),
+        );
+    }
+
     /// Find next task to run and return task id.
     ///
     /// In this case, we only return the first `Ready` task in task list.
@@ -226,6 +238,11 @@ pub fn get_syscall_times() -> [u32; MAX_SYSCALL_NUM] {
 /// Get task run time
 pub fn get_run_time() -> usize {
     TASK_MANAGER.get_run_time()
+}
+
+/// Map address
+pub fn map_addr(addr: usize, size: usize, perm: usize) {
+    TASK_MANAGER.map_addr(addr, size, perm)
 }
 
 /// Suspend the current 'Running' task and run the next task in task list.
