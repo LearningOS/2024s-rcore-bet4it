@@ -16,7 +16,7 @@ mod task;
 
 use crate::config::MAX_SYSCALL_NUM;
 use crate::loader::{get_app_data, get_num_app};
-use crate::mm::MapPermission;
+use crate::mm::{MapError, MapPermission};
 use crate::sync::UPSafeCell;
 use crate::timer::get_time_ms;
 use crate::trap::TrapContext;
@@ -133,15 +133,25 @@ impl TaskManager {
         time - task.start_time
     }
 
-    fn map_addr(&self, addr: usize, size: usize, perm: usize) {
+    fn map_addr(&self, addr: usize, size: usize, perm: usize) -> Result<(), MapError> {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let task = &mut inner.tasks[current];
-        task.memory_set.insert_framed_area(
-            addr.into(),
-            (addr + size).into(),
-            MapPermission::from_bits((perm << 1) as u8).unwrap(),
-        );
+        let bits = (perm << 1) as u8;
+        let perm = MapPermission::from_bits(bits).ok_or(MapError::InvalidPermissionBits(bits))?;
+        if perm.is_empty() || perm.contains(MapPermission::U) {
+            return Err(MapError::InvalidPermissionBits(bits));
+        }
+        task.memory_set
+            .insert_framed_area(addr.into(), (addr + size).into(), perm)
+    }
+
+    fn unmap_addr(&self, addr: usize, size: usize) -> Result<(), MapError> {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        let task = &mut inner.tasks[current];
+        task.memory_set
+            .remove_framed_area(addr.into(), (addr + size).into())
     }
 
     /// Find next task to run and return task id.
@@ -241,8 +251,13 @@ pub fn get_run_time() -> usize {
 }
 
 /// Map address
-pub fn map_addr(addr: usize, size: usize, perm: usize) {
+pub fn map_addr(addr: usize, size: usize, perm: usize) -> Result<(), MapError> {
     TASK_MANAGER.map_addr(addr, size, perm)
+}
+
+/// Unmap address
+pub fn unmap_addr(addr: usize, size: usize) -> Result<(), MapError> {
+    TASK_MANAGER.unmap_addr(addr, size)
 }
 
 /// Suspend the current 'Running' task and run the next task in task list.
