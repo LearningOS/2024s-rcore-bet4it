@@ -51,6 +51,18 @@ struct TaskManagerInner {
     current_task: usize,
 }
 
+bitflags! {
+    /// Mmap protection property: `R W X`
+    pub struct MmapProtection: u8 {
+        ///Readable
+        const R = 1 << 0;
+        ///Writable
+        const W = 1 << 1;
+        ///Excutable
+        const X = 1 << 2;
+    }
+}
+
 lazy_static! {
     /// a `TaskManager` global instance through lazy_static!
     pub static ref TASK_MANAGER: TaskManager = {
@@ -133,15 +145,29 @@ impl TaskManager {
         time - task.start_time
     }
 
-    fn map_addr(&self, addr: usize, size: usize, perm: usize) -> Result<(), MapError> {
+    fn map_addr(&self, addr: usize, size: usize, prot: usize) -> Result<(), MapError> {
         let mut inner = self.inner.exclusive_access();
         let current = inner.current_task;
         let task = &mut inner.tasks[current];
-        let bits = (perm << 1) as u8;
-        let perm = MapPermission::from_bits(bits).ok_or(MapError::InvalidPermissionBits(bits))?;
-        if perm.is_empty() || perm.contains(MapPermission::U) {
-            return Err(MapError::InvalidPermissionBits(bits));
+        let prot = MmapProtection::from_bits(
+            prot.try_into()
+                .map_err(|_| MapError::InvalidPermissionBits(prot))?,
+        )
+        .ok_or(MapError::InvalidPermissionBits(prot))?;
+        if prot.is_empty() {
+            return Err(MapError::InvalidPermissionBits(0));
         }
+        let mut perm = MapPermission::empty();
+        if prot.contains(MmapProtection::R) {
+            perm |= MapPermission::R;
+        }
+        if prot.contains(MmapProtection::W) {
+            perm |= MapPermission::W;
+        }
+        if prot.contains(MmapProtection::X) {
+            perm |= MapPermission::X;
+        }
+        perm |= MapPermission::U;
         task.memory_set
             .insert_framed_area(addr.into(), (addr + size).into(), perm)
     }
@@ -251,8 +277,8 @@ pub fn get_run_time() -> usize {
 }
 
 /// Map address
-pub fn map_addr(addr: usize, size: usize, perm: usize) -> Result<(), MapError> {
-    TASK_MANAGER.map_addr(addr, size, perm)
+pub fn map_addr(addr: usize, size: usize, prot: usize) -> Result<(), MapError> {
+    TASK_MANAGER.map_addr(addr, size, prot)
 }
 
 /// Unmap address

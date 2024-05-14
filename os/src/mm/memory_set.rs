@@ -337,7 +337,7 @@ impl MapArea {
             }
         }
         let pte_flags = PTEFlags::from_bits(self.map_perm.bits)
-            .ok_or(MapError::InvalidPermissionBits(self.map_perm.bits))?;
+            .ok_or(MapError::InvalidPermissionBits(self.map_perm.bits as usize))?;
         page_table.map(vpn, ppn, pte_flags)
     }
     #[allow(unused)]

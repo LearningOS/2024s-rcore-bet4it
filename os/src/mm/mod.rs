@@ -27,7 +27,7 @@ pub enum MapError {
     /// Failed to allocate a physical frame for mapping.
     FrameAllocationFailed,
     /// Invalid permission bits were provided for the page table entry.
-    InvalidPermissionBits(u8),
+    InvalidPermissionBits(usize),
     /// Attempted to map a virtual page number that is already mapped.
     VpnAlreadyMapped(VirtPageNum),
     /// Failed to remove a mapped area.
