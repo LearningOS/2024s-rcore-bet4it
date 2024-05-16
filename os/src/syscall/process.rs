@@ -11,8 +11,8 @@ use crate::{
     },
     syscall::*,
     task::{
-        add_task, current_task, exit_current_and_run_next,
-        suspend_current_and_run_next, MmapProtection, TaskStatus,
+        add_task, current_task, exit_current_and_run_next, suspend_current_and_run_next,
+        MmapProtection, TaskStatus,
     },
     timer::{get_time_ms, get_time_us},
 };
@@ -102,11 +102,7 @@ pub fn sys_exec(path: *const u8) -> isize {
 /// Else if there is a child process but it is still running, return -2.
 pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
     let current_task = current_task().unwrap();
-    trace!(
-        "kernel::pid[{}] sys_waitpid [{}]",
-        current_task.pid.0,
-        pid
-    );
+    trace!("kernel::pid[{}] sys_waitpid [{}]", current_task.pid.0, pid);
     // find a child process
 
     // ---- access current PCB exclusively
@@ -171,10 +167,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     let current_task = current_task().unwrap();
-    trace!(
-        "kernel:pid[{}] sys_task_info",
-        current_task.pid.0
-    );
+    trace!("kernel:pid[{}] sys_task_info", current_task.pid.0);
     let mut inner = current_task.inner_exclusive_access();
     inner.syscall_times[SYSCALL_TASK_INFO] += 1;
     let buffers = translated_byte_buffer(
