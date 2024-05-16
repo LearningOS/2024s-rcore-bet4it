@@ -37,20 +37,24 @@ pub struct TaskInfo {
 
 /// task exits and submit an exit code
 pub fn sys_exit(exit_code: i32) -> ! {
-    let current_task = current_task().unwrap();
-    trace!("kernel:pid[{}] sys_exit", current_task.pid.0);
-    let mut inner = current_task.inner_exclusive_access();
-    inner.syscall_times[SYSCALL_EXIT] += 1;
+    {
+        let current_task = current_task().unwrap();
+        trace!("kernel:pid[{}] sys_exit", current_task.pid.0);
+        let mut inner = current_task.inner_exclusive_access();
+        inner.syscall_times[SYSCALL_EXIT] += 1;
+    }
     exit_current_and_run_next(exit_code);
     panic!("Unreachable in sys_exit!");
 }
 
 /// current task gives up resources for other tasks
 pub fn sys_yield() -> isize {
-    let current_task = current_task().unwrap();
-    trace!("kernel:pid[{}] sys_yield", current_task.pid.0);
-    let mut inner = current_task.inner_exclusive_access();
-    inner.syscall_times[SYSCALL_YIELD] += 1;
+    {
+        let current_task = current_task().unwrap();
+        trace!("kernel:pid[{}] sys_yield", current_task.pid.0);
+        let mut inner = current_task.inner_exclusive_access();
+        inner.syscall_times[SYSCALL_YIELD] += 1;
+    }
     suspend_current_and_run_next();
     0
 }
@@ -60,7 +64,6 @@ pub fn sys_getpid() -> isize {
     trace!("kernel: sys_getpid pid:{}", current_task.pid.0);
     let mut inner = current_task.inner_exclusive_access();
     inner.syscall_times[SYSCALL_GETPID] += 1;
-    drop(inner);
     current_task.pid.0 as isize
 }
 
@@ -145,7 +148,7 @@ pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     let mut inner = current_task.inner_exclusive_access();
     inner.syscall_times[SYSCALL_GET_TIME] += 1;
     let buffers = translated_byte_buffer(
-        current_task.get_user_token(),
+        inner.memory_set.token(),
         ts as *const u8,
         mem::size_of::<TimeVal>(),
     );
@@ -171,7 +174,7 @@ pub fn sys_task_info(ti: *mut TaskInfo) -> isize {
     let mut inner = current_task.inner_exclusive_access();
     inner.syscall_times[SYSCALL_TASK_INFO] += 1;
     let buffers = translated_byte_buffer(
-        current_task.get_user_token(),
+        inner.memory_set.token(),
         ti as *const u8,
         mem::size_of::<TaskInfo>(),
     );
@@ -261,12 +264,23 @@ pub fn sys_sbrk(size: i32) -> isize {
 
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
-pub fn sys_spawn(_path: *const u8) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+pub fn sys_spawn(path: *const u8) -> isize {
+    let current_task = current_task().unwrap();
+    trace!("kernel:pid[{}] sys_spawn", current_task.pid.0);
+    let mut inner = current_task.inner_exclusive_access();
+    inner.syscall_times[SYSCALL_SPAWN] += 1;
+    drop(inner);
+    let token = current_task.get_user_token();
+    let path = translated_str(token, path);
+    if let Some(data) = get_app_data_by_name(path.as_str()) {
+        let new_task = current_task.spawn(data);
+        let new_pid = new_task.pid.0;
+        // add new task to scheduler
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
