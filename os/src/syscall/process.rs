@@ -71,6 +71,7 @@ pub fn sys_fork() -> isize {
     trace!("kernel:pid[{}] sys_fork", current_task.pid.0);
     let mut inner = current_task.inner_exclusive_access();
     inner.syscall_times[SYSCALL_FORK] += 1;
+    drop(inner);
     let new_task = current_task.fork();
     let new_pid = new_task.pid.0;
     // modify trap context of new_task, because it returns immediately after switching
