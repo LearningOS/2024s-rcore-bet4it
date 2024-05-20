@@ -45,10 +45,24 @@ pub struct ProcessControlBlockInner {
     pub task_res_allocator: RecycleAllocator,
     /// mutex list
     pub mutex_list: Vec<Option<Arc<dyn Mutex>>>,
+    /// mutex available array for deadlock detect
+    pub mutex_available: [isize; 5],
+    /// mutex allocation matrix for deadlock detect
+    pub mutex_allocation: [[isize; 5]; 20],
+    /// mutex need matrix for deadlock detect
+    pub mutex_need: [[isize; 5]; 20],
     /// semaphore list
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
+    /// semaphore available array for deadlock detect
+    pub semaphore_available: [isize; 5],
+    /// semaphore allocation matrix for deadlock detect
+    pub semaphore_allocation: [[isize; 5]; 20],
+    /// semaphore need matrix for deadlock detect
+    pub semaphore_need: [[isize; 5]; 20],
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// enable deadlock detect
+    pub enable_deadlock_detect: bool,
 }
 
 impl ProcessControlBlockInner {
@@ -117,8 +131,15 @@ impl ProcessControlBlock {
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),
                     mutex_list: Vec::new(),
+                    mutex_available: [0; 5],
+                    mutex_allocation: [[0; 5]; 20],
+                    mutex_need: [[0; 5]; 20],
                     semaphore_list: Vec::new(),
+                    semaphore_available: [0; 5],
+                    semaphore_allocation: [[0; 5]; 20],
+                    semaphore_need: [[0; 5]; 20],
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
                 })
             },
         });
@@ -243,8 +264,15 @@ impl ProcessControlBlock {
                     tasks: Vec::new(),
                     task_res_allocator: RecycleAllocator::new(),
                     mutex_list: Vec::new(),
+                    mutex_available: [0; 5],
+                    mutex_allocation: [[0; 5]; 20],
+                    mutex_need: [[0; 5]; 20],
                     semaphore_list: Vec::new(),
+                    semaphore_available: [0; 5],
+                    semaphore_allocation: [[0; 5]; 20],
+                    semaphore_need: [[0; 5]; 20],
                     condvar_list: Vec::new(),
+                    enable_deadlock_detect: false,
                 })
             },
         });
